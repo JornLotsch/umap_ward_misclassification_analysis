@@ -10,6 +10,7 @@ sample_metadata <- read.csv("sample_metadata.csv")
 sample_types <- sample_metadata$SampleType
 
 # Run the integrated UMAP projection and clustering/misclassification analysis
+set.seed(42)
 results <- umap_ward_misclassification_analysis(
   data = lipid_profiles,                 # Features data
   target = sample_types,                 # Ground truth (prior classes)

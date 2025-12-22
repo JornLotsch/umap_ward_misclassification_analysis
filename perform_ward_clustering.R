@@ -7,6 +7,7 @@
 #' @param projection_data Data frame or matrix with projection coordinates
 #' @param target Optional vector of target (true) classes for cluster alignment
 #' @param distance_metric Distance metric to use (default: "euclidean")
+#' @param determine_cluster_number Automatically determine cluster number and mebershipt
 #'
 #' @return List with:
 #'   clusters: (aligned) cluster assignments
@@ -18,7 +19,8 @@
 #' @importFrom stats dist hclust cutree
 perform_ward_clustering <- function(projection_data,
                                     target = NULL,
-                                    distance_metric = "euclidean") {
+                                    distance_metric = "euclidean",
+                                    determine_cluster_number = FALSE) {
   # Check input
   if (!is.data.frame(projection_data) && !is.matrix(projection_data))
     stop("projection_data must be a data.frame or a matrix.")
@@ -26,7 +28,7 @@ perform_ward_clustering <- function(projection_data,
     stop("projection_data has no rows.")
   X <- as.data.frame(projection_data)
 
-  # Number of clusters is determined by target length
+  # Number of clusters is determined by target length or computed
   if (is.null(target)) {
     warning("No target provided, clustering to a single group.")
     n_clusters <- 1
@@ -35,6 +37,12 @@ perform_ward_clustering <- function(projection_data,
     n_clusters <- length(unique(target))
   }
 
+  if (determine_cluster_number) {
+    warning("Determine cluster number as required.")
+    nb_clust_res <- NbClust::NbClust(umap_result$Projected, method = "ward.D2")
+    n_clusters  <- max(unlist(nb_clust_res[4]))
+  }
+  
   # Perform clustering
   distance_matrix <- stats::dist(X, method = distance_metric)
   cluster_object <- stats::hclust(distance_matrix, method = "ward.D2")

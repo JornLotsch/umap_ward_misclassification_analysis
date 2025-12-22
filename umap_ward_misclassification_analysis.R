@@ -42,6 +42,9 @@ source_required_functions <- function() {
 #' @param data Data frame or matrix containing input data (samples as rows)
 #' @param target Optional vector of target class values for classification (length must match nrow(data))
 #' @param labels Optional vector of labels for data points (length must match nrow(data))
+#' @param determine_cluster_number Logical, whether to automatically determine cluster number and membership. 
+#' @param                         if TRUE, then 
+#' @param voronoi_targets Logical, whether Voronoi cells are colored for prior targets, else for clusters
 #' @param output_dir Character, directory for saving plots (default: "results")
 #' @param file_prefix Character, prefix for output filenames (default: "umap_analysis")
 #' @param file_format Character, "svg" or "png" (default: "svg")
@@ -66,17 +69,19 @@ source_required_functions <- function() {
 #' @importFrom gridExtra grid.arrange
 
 umap_ward_misclassification_analysis <- function(data,
-                                  target = NULL,
-                                  labels = NULL,
-                                  output_dir = "results",
-                                  file_prefix = "umap_analysis",
-                                  file_format = "svg",
-                                  label_points = TRUE,
-                                  row_font_size = 6,
-                                  width = 12,
-                                  height = 9,
-                                  dpi = 300,
-                                  n_neighbors = 15) {
+                                                 target = NULL,
+                                                 labels = NULL,
+                                                 determine_cluster_number = FALSE,
+                                                 voronoi_targets = TRUE,
+                                                 output_dir = "results",
+                                                 file_prefix = "umap_analysis",
+                                                 file_format = "svg",
+                                                 label_points = TRUE,
+                                                 row_font_size = 6,
+                                                 width = 12,
+                                                 height = 9,
+                                                 dpi = 300,
+                                                 n_neighbors = 15) {
 
   # --- Input Validation ---
   if (!is.data.frame(data) && !is.matrix(data)) {
@@ -131,7 +136,8 @@ umap_ward_misclassification_analysis <- function(data,
   message("Performing clustering...")
   cluster_result <- perform_ward_clustering(
     projection_data = umap_result$Projected,
-    target = umap_result$UniqueData$Target
+    target = umap_result$UniqueData$Target,
+    determine_cluster_number = determine_cluster_number
   )
 
   # --- Combine data for visualization ---
@@ -147,6 +153,7 @@ umap_ward_misclassification_analysis <- function(data,
   voronoi_plot <- plot_umap_with_voronoi(
     umap_projection = combined_data,
     targets = combined_data$Target,
+    clusters = if (voronoi_targets) NULL else combined_data$Cluster,
     labels = combined_data$Label,
     label_points = label_points
   )
@@ -244,32 +251,68 @@ umap_ward_misclassification_analysis <- function(data,
 }
 
 # Example usage
+run_examples <- FALSE
 
-# Load your data frame: each row is a sample, each column a feature (e.g., lipid species)
-lipid_profiles <- read.csv("lipid_profiles.csv")
+if (run_examples) {
+  # Load your data frame: each row is a sample, each column a feature (e.g., lipid species)
+  lipid_profiles <- read.csv("lipid_profiles.csv")
 
-# Load or extract your class labels for each sample
-sample_metadata <- read.csv("sample_metadata.csv")
-sample_types <- sample_metadata$SampleType
+  # Load or extract your class labels for each sample
+  sample_metadata <- read.csv("sample_metadata.csv")
+  sample_types <- sample_metadata$SampleType
 
-# Run the integrated UMAP projection and clustering/misclassification analysis
-results <- umap_ward_misclassification_analysis(
-  data = lipid_profiles,       # Features data
-  target = sample_types,       # Ground truth (prior classes)
-  labels = sample_metadata$SampleID, # Optional: row labels for plots, if available
-  output_dir = "qc_results"    # Directory to save QC visualizations and results
-)
+  # Run the integrated UMAP projection and clustering/misclassification analysis
+  set.seed(42)
+  results <- umap_ward_misclassification_analysis(
+    data = lipid_profiles[, !names(lipid_profiles) %in% c("SampleID")], # Features data
+    target = sample_types, # Ground truth (prior classes)
+    labels = sample_metadata$SampleID, # Optional: row labels for plots, if available
+    output_dir = "qc_results" # Directory to save QC visualizations and results
+  )
 
-# Output misclassification rate and list which samples were misclassified
-cat("Sample misclassification rate:",
-    sprintf("%.2f%%", results$misclassification_rate * 100), "\n")
+  # Output misclassification rate and list which samples were misclassified
+  cat("Sample misclassification rate:",
+      sprintf("%.2f%%", results$misclassification_rate * 100), "\n")
 
-if (!is.null(results$misclassified_samples) && nrow(results$misclassified_samples) > 0) {
-  cat("Misclassified samples:\n")
-  print(results$misclassified_samples)
-} else {
-  cat("No misclassified samples.\n")
+  if (!is.null(results$misclassified_samples) && nrow(results$misclassified_samples) > 0) {
+    cat("Misclassified samples:\n")
+    print(results$misclassified_samples)
+  } else {
+    cat("No misclassified samples.\n")
+  }
+
+  # Optionally: view UMAP plot object, if provided
+  print(results$umap_plot)
+
+  # Run the integrated UMAP projection and clustering/misclassification analysis on randomly permuted data
+  SEED <- 42
+  lipid_profiles_rndm <- mapply(function(col, j) {
+    set.seed(SEED + j)
+    perm <- sample(seq_along(col), length(col))
+    col[perm]
+  }, lipid_profiles, seq_len(ncol(lipid_profiles)), SIMPLIFY = FALSE)
+
+  lipid_profiles_rndm <- as.data.frame(lipid_profiles_rndm, stringsAsFactors = FALSE)
+
+  set.seed(42)
+  results_rndm <- umap_ward_misclassification_analysis(
+    data = lipid_profiles_rndm[, !names(lipid_profiles) %in% c("SampleID")], # Features data
+    target = sample_types, # Ground truth (prior classes)
+    labels = sample_metadata$SampleID, # Optional: row labels for plots, if available
+    output_dir = "qc_results_rndm" # Directory to save QC visualizations and results
+  )
+
+  # Output misclassification rate and list which samples were misclassified
+  cat("Sample misclassification rate in permuted data:",
+      sprintf("%.2f%%", results_rndm$misclassification_rate * 100), "\n")
+
+  if (!is.null(results_rndm$misclassified_samples) && nrow(results_rndm$misclassified_samples) > 0) {
+    cat("Misclassified samples in permuted data:\n")
+    print(results_rndm$misclassified_samples)
+  } else {
+    cat("No misclassified samples in permuted data.\n")
+  }
+
+  # Optionally: view UMAP plot object of permuted data, if provided
+  print(results_rndm$umap_plot)
 }
-
-# Optionally: view UMAP plot object, if provided
-print(results$umap_plot)

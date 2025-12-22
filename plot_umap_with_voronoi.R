@@ -7,17 +7,18 @@
 #'
 #' @param umap_projection Data frame with projection coordinates or result from
 #'                       perform_umap_projection()
-#' @param targets Vector of target values for coloring
+#' @param targets Vector of target values for coloring points and also cells if cluster is NULL 
+#' @param clusters Vector of cluster values for coloring cells if not NULL
 #' @param labels Optional vector of labels for points (default: row names or indices)
 #' @param label_points Logical, whether to display labels (default: FALSE)
 #'
 #' @return A ggplot2 object displaying the UMAP projection with Voronoi cells
-#'
 #' @importFrom ggplot2 ggplot geom_polygon geom_point theme_light theme labs scale_shape_manual scale_fill_manual scale_color_manual guides
 #' @importFrom ggrepel geom_text_repel
 #' @importFrom deldir deldir tile.list
 plot_umap_with_voronoi <- function(umap_projection,
                                    targets,
+                                   clusters = NULL,
                                    labels = NULL,
                                    label_points = FALSE) {
 
@@ -38,12 +39,14 @@ plot_umap_with_voronoi <- function(umap_projection,
   shape_values <- c(17, 16, 15, 18, 2, 1, 0, 5, 7, 8, 9, 19, 11, 12)
 
   # Extract data if input is the result from perform_umap_projection
-    X <- umap_projection
+  X <- umap_projection
 
   # Initial checks of arguments
   if (ncol(X) < 2) stop("The projection data must have at least two columns.")
   if (nrow(X) != length(targets)) stop("The length of 'targets' must match the number of rows in the projection data.")
-
+  if (!is.null(clusters)) {
+    if (nrow(X) != length(clusters)) stop("The length of 'clusters' must match the number of rows in the projection data.")
+  } 
   # Assign labels if not present
   if (is.null(labels)) {
     if (!is.null(rownames(X))) {
@@ -57,15 +60,23 @@ plot_umap_with_voronoi <- function(umap_projection,
     Proj1 = X[, 1],
     Proj2 = X[, 2],
     Target = targets,
+    Cluster = if (is.null(clusters)) targets else clusters,
     Label = labels
   )
 
-  # Ensure Target is a factor for consistent coloring/shaping
+  # Ensure Target and Clusters are factors for consistent coloring/shaping
   plotData$Target <- as.factor(plotData$Target)
+  plotData$Cluster <- as.factor(plotData$Cluster)
+
+  plotData$Cells <- if (is.null(clusters)) plotData$Target else plotData$Cluster
 
   # Ensure we have enough colors for all target values
   unique_targets <- unique(plotData$Target)
   target_palette <- rep(cb_palette, length.out = length(unique_targets))
+
+  # Ensure we have enough colors for all cluster values
+  unique_clusters <- unique(plotData$Cluster)
+  cluster_palette <- rep(cb_palette, length.out = length(unique_clusters))
 
   # Voronoi diagram computation
   voronoiData <- deldir::deldir(plotData$Proj1, plotData$Proj2)
@@ -78,15 +89,15 @@ plot_umap_with_voronoi <- function(umap_projection,
 
   # Create plot with ggplot2
   plot <- ggplot2::ggplot() +
-    # Voronoi cells colored by target
-    ggplot2::geom_polygon(
+  # Voronoi cells colored by target
+  ggplot2::geom_polygon(
       data = voronoi_df,
-      ggplot2::aes(x = x, y = y, group = id, fill = as.factor(plotData$Target[id])),
+      ggplot2::aes(x = x, y = y, group = id, fill = as.factor(plotData$Cells[id])),
       alpha = 0.3,
       color = NA
     ) +
-    # Points colored by target
-    ggplot2::geom_point(
+  # Points colored by target
+  ggplot2::geom_point(
       data = plotData,
       ggplot2::aes(
         x = Proj1,
@@ -106,11 +117,17 @@ plot_umap_with_voronoi <- function(umap_projection,
         fill = ggplot2::alpha("white", 0.2)
       )
     ) +
-    ggplot2::labs(title = "UMAP projection", x = "UMAP 1", y = "UMAP 2", color = "Target", fill = "Target", shape = "Target") +
     ggplot2::scale_shape_manual(values = shape_values) +
-    ggplot2::scale_fill_manual(values = target_palette) +
     ggplot2::scale_color_manual(values = target_palette) +
     ggplot2::guides(shape = ggplot2::guide_legend(override.aes = list(label = "")))
+
+  if (is.null(clusters)) {
+    plot <- plot + ggplot2::scale_fill_manual(values = target_palette) +
+    ggplot2::labs(title = "UMAP projection", x = "UMAP 1", y = "UMAP 2", color = "Target", fill = "Target", shape = "Target") 
+  } else {
+    plot <- plot + ggplot2::scale_fill_manual(values = cluster_palette) +
+    ggplot2::labs(title = "UMAP projection", x = "UMAP 1", y = "UMAP 2", color = "Cluster", fill = "Cluster", shape = "Target") 
+  }
 
   # Conditional labeling of points
   if (label_points) {
