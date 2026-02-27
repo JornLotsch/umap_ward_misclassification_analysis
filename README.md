@@ -1,81 +1,85 @@
-# UMAP Ward misclassification analysis
-## When artifacts masquerade as discovery: A case study revealing hidden laboratory errors in lipidomics data with biologically apparently plausible results.
+# UMAP Ward Misclassification Analysis
 
-This R code provides a comprehensive workflow for performing UMAP projection, Ward clustering, and misclassification analysis on high-dimensional data. It's particularly useful for quality control and exploratory data analysis in omics studies.
+## When Artifacts Masquerade as Discovery: An Investigative Quality Control Framework for Lipidomics
+
+This repository provides an **investigative quality control (QC) framework for omics data** designed to detect hidden laboratory artifacts and batch effects that may masquerade as biological signals. The method combines UMAP projection, Ward's hierarchical clustering, Voronoi cell visualization, and supervised classification (Random Forest) to systematically identify misclassified or anomalously clustered samples.
+
+### Core Framework
+
+The quality control workflow:
+1. **Unsupervised structure detection**: UMAP projection + Ward clustering + Voronoi visualization to identify potential subgroups and anomalies
+2. **Supervised artifact detection**: Random Forest classification across multiple alternative class structures (batches, processing dates, derived clusters) to test whether data structure supports the biological hypothesis or reveals technical confounds
+3. **Evidence-based interpretation**: When supervised classifiers achieve higher accuracy for workflow-related groupings than for the biological hypothesis, this signals that technical artifacts may dominate the biological signal, requiring investigation before biological interpretation
+
+### Intended Use
+
+This framework complements existing omics QC pipelines by providing **post-analysis detective work** when standard QC, statistical analysis, and machine learning all appear to validate a biological hypothesis, yet the results seem suspiciously perfect or inconsistent with prior knowledge. It is particularly useful for:
+- Identifying unexpected batch effects that escape standard QC procedures
+- Flagging samples that cluster anomalously
+- Testing multiple alternative explanations for observed data structure
+- Validating whether apparent biological signals are robust or artifacts
+
+**Important**: This is a framework for investigation and hypothesis testing, not a replacement for standard data preprocessing and quality control.
 
 ## Installation
 
-You can download this code to you local hard drive and run it from there. 
+Download this code repository to your local hard drive. All required R packages will be automatically installed and loaded when you run the example scripts. 
 
-## Functions
-### `check_and_install_packages(pkg_list)`
-**Description**: Utility function that checks for missing R packages and automatically installs them from CRAN.
-**Parameters**:
-- `pkg_list`: Character vector of package names to check and install
+## Package Architecture
 
-**Returns**:
-- No return value (NULL). Installs missing packages and loads all required packages
-- Throws an error if any packages fail to load after installation
+The code is organized in a modular hierarchy:
 
-**Example**:
-``` r
-required_packages <- c("ggplot2", "umap", "cluster")
-check_and_install_packages(required_packages)
 ```
-### `source_required_functions()`
-**Description**: Sources all required analysis functions from the current working directory.
-**Parameters**: None
-**Returns**:
-- No return value (NULL). Sources external R scripts containing analysis functions
-- Throws an error if any required function files are missing
+Example Scripts (*_run.R)
+    ↓
+Core Analysis Functions (umap_ward_misclassification_analysis*.R)
+    ↓
+Utility Functions (prepare_dataset.R, perform_*.R, plot_*.R)
+```
 
-**Required Files**:
-- `prepare_dataset.R`
-- `perform_umap_projection.R`
-- `perform_ward_clustering.R`
-- `plot_umap_with_voronoi.R`
-- `plot_misclassification_heatmap.R`
-- `perform_supervised_classification.R`
+### Utility Functions and Libraries
 
-### `umap_ward_misclassification_analysis()`
-**Description**: Main analysis function that performs a complete workflow including data preparation, UMAP projection, Ward clustering, visualization, and misclassification analysis.
-#### Parameters
+The core computational functions automatically load their required libraries:
 
-| Parameter | Type | Default | Description |
-| --- | --- | --- | --- |
-| `data` | data.frame/matrix | Required | Input data with samples as rows and features as columns |
-| `target` | vector | NULL | Optional target class labels (length must match nrow(data)) |
-| `labels` | vector | NULL | Optional sample labels for visualization (length must match nrow(data)) |
-| `determine_cluster_number` | logical | FALSE | Whether to automatically determine cluster number and membership |
-| `voronoi_targets` | logical | TRUE | Whether Voronoi cells are colored for prior targets (TRUE) or for clusters (FALSE) |
-| `output_dir` | character | "results" | Directory for saving output files |
-| `file_prefix` | character | "umap_analysis" | Prefix for output filenames |
-| `file_format` | character | "svg" | Plot format: "svg" or "png" |
-| `label_points` | logical | TRUE | Whether to display point labels in plots |
-| `row_font_size` | numeric | 6 | Font size for heatmap row labels |
-| `width` | numeric | 12 | Plot width in inches |
-| `height` | numeric | 9 | Plot height in inches |
-| `dpi` | integer | 300 | Resolution for PNG output |
-| `n_neighbors` | integer | 15 | Number of nearest neighbors for UMAP |
-#### Returns
-A named list containing the following components:
+- **`prepare_dataset.R`**: Data standardization and preprocessing
+- **`perform_umap_projection.R`**: UMAP dimensionality reduction (requires: `umap`)
+- **`perform_ward_clustering.R`**: Hierarchical clustering with optimization (requires: `stats::hclust`, `clue::solve_LSAP`)
+- **`plot_umap_with_voronoi.R`**: Voronoi tessellation visualization (requires: `ggplot2`, `ggrepel`, `deldir`)
+- **`plot_misclassification_heatmap.R`**: Misclassification heatmap visualization (requires: `ggplot2`, `tidyr`, `scales`)
+- **`plot_classification_stability_heatmap.R`**: Classification stability visualization (requires: `ggplot2`, `tidyr`, `scales`, `grid`)
 
-| Component | Type | Description |
-| --- | --- | --- |
-| `prepared_data` | data.frame | Processed input data ready for analysis |
-| `umap_result` | list | Complete UMAP projection results including coordinates and parameters |
-| `cluster_result` | list | Ward clustering results including cluster assignments |
-| `voronoi_plot` | ggplot2 | UMAP scatter plot with Voronoi tessellation overlay |
-| `heatmap_result` | list | Misclassification heatmap and associated statistics |
-| `combined_plot` | grob | Combined visualization of Voronoi plot and heatmap |
-| `misclassification_rate` | numeric | Proportion of misclassified samples (0-1) |
-| `misclassified_samples` | data.frame | Details of misclassified samples with expected vs assigned classes |
-#### Output Files
-The function generates several output files in the specified directory:
-1. **`{file_prefix}_voronoi.{format}`**: UMAP plot with Voronoi tessellation
-2. **`{file_prefix}_heatmap.{format}`**: Misclassification heatmap
-3. **`{file_prefix}_combined.{format}`**: Combined visualization
-4. **`{file_prefix}_misclassified_samples.csv`**: CSV file listing misclassified samples (if any)
+### Core Method Functions
+
+#### `umap_ward_misclassification_analysis()` — **Main QC Framework Function**
+**Description**: Combines UMAP projection, Ward hierarchical clustering, Voronoi visualization, and misclassification analysis to detect anomalous samples and data structure inconsistent with your study hypothesis.
+
+**Key Parameters**:
+- `data`: Input data (samples × features)
+- `target`: Target class labels for comparison
+- `output_dir`: Directory for output files
+- `file_format`: "svg" or "png"
+- `n_neighbors`: UMAP parameter (default: 15)
+
+**Output Files**:
+- `{file_prefix}_voronoi.{format}`: UMAP + Voronoi visualization
+- `{file_prefix}_heatmap.{format}`: Misclassification heatmap
+- `{file_prefix}_combined.{format}`: Combined visualization
+- `{file_prefix}_misclassified_samples.csv`: Anomalous samples (if any)
+
+#### `perform_supervised_classification()` — **Artifact Detection via Random Forest**
+**Description**: Tests whether data structure supports your biological hypothesis or reveals technical artifacts by comparing classification accuracy across multiple alternative groupings (batches, dates, derived clusters).
+
+**Key Parameters**:
+- `X`: Predictor features
+- `Y`: Target variables to test (alternative hypotheses)
+- `n_iter`: Resampling iterations (paper uses 100)
+- `training_size`: Train/test ratio (default: 0.67)
+
+**Returns**: Median balanced accuracy with 95% CI for each hypothesis tested.
+
+### Supplementary Functions
+
+**`umap_ward_misclassification_analysis_multi()`**: Optional multi-target extension. **`plot_classification_stability_heatmap()`**: Optional visualization of classification stability.
 
 ## Usage Examples
 
@@ -107,106 +111,57 @@ cat("Misclassification rate:",
 if (nrow(results$misclassified_samples) > 0) {
   print(results$misclassified_samples)
 }
-
-# Access individual components
-umap_coordinates <- results$umap_result$Projected
-cluster_assignments <- results$cluster_result$clusters
 ```
 
 ## Example Scripts
 
-This repository includes several example R scripts demonstrating different use cases:
+This repository includes example R scripts implementing the analyses described in the paper:
 
-### Main Publication Example
+### Publication Case Study
+Case study on real lipidomics data (PsA patients vs. controls) demonstrating detection of a hidden batch effect. Shows:
+- UMAP projection with Voronoi tessellation visualization  
+- Ward hierarchical clustering
+- Identification of misclassified/anomalous samples
+- Random Forest supervised classification testing alternative hypotheses (study groups, derived clusters, batch identifiers, processing dates)
+- How supervised classifiers revealed that batch effects (not biological differences) dominated the signal
+This script reproduces the primary case study described in the paper.
 
-**`lipid_case_data_run.R`**: Demonstrates UMAP-Ward clustering analysis on real lipidomics data (PsA patients vs. controls). This is the primary example associated with the publication (Lotsch et al., 2025) and shows both standard analysis and randomized permutation analyses for validation.
+### Method Validation
+
+**`lipid_validation_data_run.R`**: Validation of the QC framework on independent data:
+- **Batch-effect-free validation**: UMAP + Ward + Voronoi + Random Forest applied to the Checa et al. (2015) reference dataset to confirm no false-positive artifact signals
+- **Simulated batch effect sensitivity**: Application to datasets with artificially injected batch effects of varying magnitude (0%, 50%, 100%, 150%, 200% of within-group SD)
+- Demonstrates sensitivity and specificity of the framework for detecting batch effects of different magnitudes
 
 ### Demonstration Examples
 
-**`golfball_dataset_run.R`**: Illustrates the workflow using an artificial "golfball" dataset consisting of concentric spheres in 3D space. This example clearly demonstrates how UMAP can separate distinct geometric structures and how Ward clustering assigns points to clusters. The output includes a combined visualization (`golfballs_combined_plot.svg`) showing:
+**`golfball_dataset_run.R`**: Artificial "golfball" dataset (concentric spheres) demonstrating the visualization approach on synthetic data with known structure. Useful for understanding how the method behaves when data structure is completely understood. The output includes a combined visualization (`golfballs_combined_plot.svg`) showing:
 - **Left panel**: UMAP projection with Voronoi tessellation colored by cluster assignments
 - **Right panel**: Misclassification heatmap comparing prior class assignments (spheres) with Ward-assigned clusters
 
 ![Golfball UMAP Analysis Results](golfballs_combined_plot.svg)
 
-**`create_sample_files.R`**: Generates minimal synthetic lipidomics data for quick testing and learning purposes. Creates `lipid_profiles.csv` and `sample_metadata.csv` files with balanced class distributions and simulated class-specific feature variations.
+**`example_run.R`**: Simplified introductory example showing basic workflow with minimal configuration. Ideal for learning the core approach before applying to real data.
 
-**`example_run.R`**: A simplified introductory example showing the basic workflow with minimal configuration.
+**`create_sample_files.R`**: Generates synthetic lipidomics data for quick testing and learning purposes.
+
 ## Dependencies
 
-### Core Analysis Packages
-The main analysis functions automatically install and load the following R packages:
-- `ggplot2`: Data visualization 
-- `tidyr`: Data manipulation
-- `scales`: Plot scaling functions
-- `deldir`: Voronoi tessellation
-- `umap`: UMAP dimensionality reduction
-- `gridExtra`: Combining plots
-- `ggrepel`: Text labeling in plots
-- `clue`: Optimal cluster assignment (Hungarian algorithm)
-- `NbClust`: Determining optimal number of clusters (optional, if `determine_cluster_number = TRUE`)
+### Core Analysis
+All required packages are automatically installed and loaded:
+- **Visualization**: `ggplot2`, `ggrepel`, `deldir` (Voronoi), `gridExtra`
+- **Analysis**: `umap`, `clue` (Hungarian algorithm)
+- **Utilities**: `tidyr`, `scales`, `grid`
 
-### Supervised Classification Packages
-For supervised classification analysis (via `perform_supervised_classification.R`):
-- `caret`: Machine learning framework
-- `randomForest`: Random Forest implementation
-- `e1071`: Support Vector Machines
-- `caTools`: Utility functions
-- `pbmcapply`: Parallel processing with progress bars
-- `dplyr`: Data manipulation
+### Supervised Classification (Random Forest)
+- `caret`, `randomForest`, `parallel`, `pbmcapply`, `caTools`, `dplyr`
 
-### Example Script Dependencies
-For running the example scripts, additional packages may be required:
-- `ComplexHeatmap`: Advanced heatmap visualizations (used in lipid and golfball examples)
-- `plot3D`: 3D plotting (golfball dataset generation)
-- `car`: Companion to Applied Regression (golfball data preparation)
-- `ggplotify`: Convert base plots to ggplot2 objects (golfball visualization) 
+### Demonstrations (Golfball, Visuals)
+- `ComplexHeatmap`, `cowplot`, `plot3D`, `car`, `ggplotify`
 
 ## Requirements
-- R >= 3.6.0
-- External function files (listed in `source_required_functions()`)
-- Write permissions in the output directory
-
-## Error Handling
-The function includes comprehensive input validation:
-- Checks data types and dimensions
-- Validates parameter ranges and formats
-- Ensures required files exist
-- Verifies directory permissions
-- Provides informative error messages for troubleshooting
-
-## Additional Resources
-
-### Supervised Classification Analysis
-
-**`perform_supervised_classification.R`**: Provides supervised machine learning classification using Random Forest and Support Vector Machine (SVM) models. This function:
-- Performs repeated random subsampling validation across multiple target variables
-- Includes automated hyperparameter tuning for both RF and SVM models
-- Computes class-balanced accuracy with 95% confidence intervals
-- Handles small and imbalanced datasets robustly
-- Supports parallel processing for efficient computation
-
-This is useful for evaluating the predictive accuracy of features or comparing classification performance across different datasets and models.
-
-### Alternative Projection Methods
-While this package focuses on UMAP for dimensionality reduction, the accompanying file `projection_methods_snippet.R` provides implementations of multiple alternative projection methods that can be used for exploratory analysis, including:
-
-**Unsupervised methods:**
-- PCA (Principal Component Analysis)
-- ICA (Independent Component Analysis)
-- MDS (Multidimensional Scaling)
-- t-SNE (t-Distributed Stochastic Neighbor Embedding)
-- Isomap (Isometric Feature Mapping)
-- LLE (Local Linear Embedding)
-- NMF (Non-negative Matrix Factorization)
-
-**Supervised methods:**
-- LDA (Linear Discriminant Analysis)
-- PLS-DA (Partial Least Squares Discriminant Analysis)
-- PLS-LDA (PLS followed by LDA)
-- IPCA (Independent Principal Component Analysis)
-
-The snippet demonstrates the `perform_projection()` function with detailed parameter documentation and usage notes for each method. This can be useful for comparing different dimensionality reduction approaches on your data.
+- **R >= 3.6.0**
+- Write permissions in output directory
 
 ## License
 
@@ -216,4 +171,4 @@ GPL-3
 
 If you use this tool in your work, please cite:
 
-Lotsch J, Kringel D, Hahnefeld L, Gurke R, Himmelspach A, Behrens F, and Geisslinger G. When artifacts align with biology: The case for investigative flexibility over standardized quality control in lipidomics datasets. *2025* (submitted).
+Lötsch J, Hahnefeld L, Geisslinger G, Himmelspach A, and Kringel D. When artifacts masquerade as discovery: An investigative quality control framework for lipidomics. *2026*.

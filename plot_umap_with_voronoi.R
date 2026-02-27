@@ -123,10 +123,12 @@ plot_umap_with_voronoi <- function(umap_projection,
 
   if (is.null(clusters)) {
     plot <- plot + ggplot2::scale_fill_manual(values = target_palette) +
-    ggplot2::labs(title = "UMAP projection", x = "UMAP 1", y = "UMAP 2", color = "Target", fill = "Target", shape = "Target") 
+    ggplot2::labs(title = "UMAP projection", subtitle = paste0(nrow(X), " evaluable samples)"), 
+                  x = "UMAP 1", y = "UMAP 2", color = "Target", fill = "Target", shape = "Target") 
   } else {
     plot <- plot + ggplot2::scale_fill_manual(values = cluster_palette) +
-    ggplot2::labs(title = "UMAP projection", x = "UMAP 1", y = "UMAP 2", color = "Cluster", fill = "Cluster", shape = "Target") 
+    ggplot2::labs(title = "UMAP projection", subtitle = paste0(nrow(X), " evaluable samples)"), 
+                  x = "UMAP 1", y = "UMAP 2", color = "Cluster", fill = "Cluster", shape = "Target") 
   }
 
   # Conditional labeling of points

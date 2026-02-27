@@ -107,7 +107,7 @@ plot_misclassification_heatmap <- function(
 
   # Specify color mapping for legend values
   value_levels <- c(cluster_levels, "Not misclassified", "Misclassified")
-  fill_colors <- c(col_vals, "Not misclassified" = "lightyellow", "Misclassified" = "salmon")
+  fill_colors <- c(col_vals, "Not misclassified" = "lightyellow2", "Misclassified" = "salmon")
 
   # Set the factor level order for fill
   df_long$value <- factor(df_long$value, levels = value_levels)
@@ -122,7 +122,7 @@ plot_misclassification_heatmap <- function(
   subtitle <- paste0("Misclassification rate: ", misclass_rate, "%")
 
   plot <- ggplot2::ggplot(df_long, ggplot2::aes(x = column, y = row, fill = value)) +
-    ggplot2::geom_tile(color = "white", size = 0.5) +
+    ggplot2::geom_tile(color = "white", linewidth = 0.5) +
     ggplot2::scale_fill_manual(
       values = fill_colors,
       na.value = "white",

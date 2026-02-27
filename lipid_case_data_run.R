@@ -1,334 +1,399 @@
-# =============================================================================
-# UMAP-Ward Misclassification Analysis Script
-# Lipid Profiles (PsA vs Controls)
-# =============================================================================
+#===============================================================================
+# UMAP-Ward Misclassification and Supervised Classification Analysis
+# Lipid Profiles: Psoriatic Arthritis (PsA) vs Controls
+# Reproducible Analysis Pipeline
+#===============================================================================
 
-# -----------------------------------------------------------------------------
-# 1. SETUP: Source helper functions and set working directory
-# -----------------------------------------------------------------------------
-
-# Helper function to source all required analysis functions from current directory
-source_required_functions <- function() {
-  function_files <- c("umap_ward_misclassification_analysis.R")
-  missing <- function_files[!file.exists(function_files)]
-  if (length(missing) > 0) {
-    stop("Required function files not found: ", paste(missing, collapse = ", "))
+# Required libraries (installed automatically if missing)
+required_packages <- c("ggplot2", "cowplot", "ComplexHeatmap", "grid", "umap", "deldir", "gridExtra")
+for(pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  } else {
+    library(pkg, character.only = TRUE)
   }
-  lapply(function_files, function(file) {
-    source(file)
-    message("Sourced function from ", file)
-  })
 }
 
-# Set working directory and source functions
-setwd("/home/joern/Aktuell/ProjectionsBiomed/08AnalyseProgramme/R/projectionsPlots/umap_ward_misclassification_analysis/umap_ward_misclassification_analysis")
+# Set global seed for reproducibility
+SEED <- 42
+set.seed(SEED)
+
+setwd("/home/joern/Aktuell/ProjectionsBiomed/08AnalyseProgramme/R/projectionsPlots/umap_ward_misclassification_analysis/umap_ward_misclassification_analysis/")
+
+# -----------------------------------------------------------------------------
+# CONFIGURATION: File paths and parameters
+# -----------------------------------------------------------------------------
+data_dir <- "/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished"
+lipid_file <- file.path(data_dir, "PsA_lipids_BC.csv")
+metadata_file <- file.path(data_dir, "PsA_classes.csv")
+
+# -----------------------------------------------------------------------------
+# 1. UTILITY FUNCTIONS
+# -----------------------------------------------------------------------------
+source_required_functions <- function() {
+  function_files <- c(
+    "umap_ward_misclassification_analysis.R",
+    "umap_ward_misclassification_analysis_multi.R",
+    "perform_supervised_classification.R",
+    "plot_classification_stability_heatmap.R"
+  )
+  missing_files <- function_files[!file.exists(function_files)]
+  if(length(missing_files) > 0) {
+    stop("Missing required files: ", paste(missing_files, collapse = ", "))
+  }
+  invisible(lapply(function_files, function(f) {
+    source(f)
+    message("✓ Sourced: ", f)
+  }))
+}
+
+# Load required analysis functions
 source_required_functions()
 
-# Set seed
-SEED <- 42
+# -----------------------------------------------------------------------------
+# 2. DATA LOADING AND PREPROCESSING
+# -----------------------------------------------------------------------------
+message("Loading lipidomics data...")
+lipid_profiles <- read.csv(lipid_file, row.names = 1, check.names = FALSE)
+lipid_metadata <- read.csv(metadata_file, row.names = 1)
+
+# Extract processing month from sampling dates
+lipid_metadata$Month <- format(
+  as.Date(lipid_metadata$Sampling_date, format = "%m/%d/%Y"), "%B"
+)
+
+message(sprintf("✓ Loaded %d samples × %d lipid features", 
+                nrow(lipid_profiles), ncol(lipid_profiles)))
 
 # -----------------------------------------------------------------------------
-# 2. REAL DATA ANALYSIS
+# 3. UMAP-WARD CLUSTERING ANALYSIS (REAL DATA)
 # -----------------------------------------------------------------------------
+message("\n=== UMAP-Ward Analysis: Real Data ===")
 
-# Load lipid profiles (rows = samples, columns = lipid features)
-lipid_profiles <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished/PsA_lipids_BC.csv", row.names = 1)
-
-# Load sample metadata (class labels)
-lipid_metadata <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished/PsA_classes.csv")
-sample_types <- lipid_metadata$PsA
-
-# Run UMAP + Ward clustering analysis (two variants)
-set.seed(SEED)
-results_lipids <- umap_ward_misclassification_analysis(
-  data = lipid_profiles, # Feature matrix
-  target = sample_types, # Ground truth classes
-  labels = lipid_metadata$ID, # Sample labels for plots
-  output_dir = "lipid_results",
+# Analysis 1: Voronoi colored by target groups
+results_real_1 <- umap_ward_misclassification_analysis_multi(
+  data = lipid_profiles,
+  targets = lipid_metadata,
+  labels = lipid_metadata$ID,
+  output_dir = "lipid_results_real",
   determine_cluster_number = FALSE
 )
 
-set.seed(SEED)
-results_lipids_2 <- umap_ward_misclassification_analysis(
+# Analysis 2: Voronoi colored by clusters
+results_real_2 <- umap_ward_misclassification_analysis_multi(
   data = lipid_profiles,
-  target = sample_types,
+  targets = lipid_metadata,
   labels = lipid_metadata$ID,
-  output_dir = "lipid_results",
+  output_dir = "lipid_results_real",
   determine_cluster_number = FALSE,
   voronoi_targets = FALSE
 )
 
-# Report misclassification results
-cat("PsA/controls misclassification rate:",
-    sprintf("%.2f%%", results_lipids$misclassification_rate * 100), "\n")
+# Report primary results (PsA classification)
+cat(sprintf("\nPsA classification misclassification rate: %.1f%%\n", 
+            results_real_1$target_results$PsA$misclassification_rate * 100))
 
-if (!is.null(results_lipids$misclassified_samples) && nrow(results_lipids$misclassified_samples) > 0) {
-  cat("Misclassified PsA/controls:\n")
-  print(results_lipids$misclassified_samples)
-} else {
-  cat("No misclassified PsA/controls.\n")
-}
-
-print(results_lipids$umap_plot)
-
-# Combine and save real data plots
-lipids_combined_plot_1 <- cowplot::plot_grid(
-  results_lipids$voronoi_plot + labs(title = "UMAP projection of data by study group", subtitle = ""),
-  results_lipids_2$voronoi_plot + labs(title = "UMAP projection of data by cluster", subtitle = ""),
-  results_lipids$heatmap_result$plot +
-    theme(legend.position.inside = TRUE, legend.position = c(.5, .5), legend.direction = "vertical") +
+# Create publication-quality figure panels
+fig1a_psa <- cowplot::plot_grid(
+  results_real_1$target_results$PsA$voronoi_plot + 
+    labs(title = "UMAP: Study groups"),
+  results_real_2$target_results$PsA$voronoi_plot + 
+    labs(title = "UMAP: Clusters"),
+  results_real_1$target_results$PsA$heatmap_result$plot + 
+    theme(legend.position.inside = TRUE, legend.position = c(0.5, 0.5), 
+          legend.direction = "vertical") +
     guides(fill = guide_legend(nrow = 4, byrow = TRUE)) +
-    labs(title = "Groups and misclassifieds"),
-  labels = "AUTO", nrow = 1, rel_widths = c(2, 2, 1),
+    labs(title = "Misclassifications"),
+  labels = c("A", "B", "C"), nrow = 1, rel_widths = c(2, 2, 1),
   align = "h", axis = "tb"
 )
 
-print(lipids_combined_plot_1)
-ggsave(plot = lipids_combined_plot_1, filename = "lipids_combined_plot_1.svg", width = 18, height = 8)
+fig1b_month <- cowplot::plot_grid(
+  results_real_1$target_results$Month$voronoi_plot + 
+    labs(title = "UMAP: Processing month"),
+  results_real_2$target_results$Month$voronoi_plot + 
+    labs(title = "UMAP: Clusters"),
+  results_real_1$target_results$Month$heatmap_result$plot + 
+    theme(legend.position.inside = TRUE, legend.position = c(0.5, 0.5), 
+          legend.direction = "vertical") +
+    guides(fill = guide_legend(nrow = 4, byrow = TRUE)) +
+    labs(title = "Misclassifications"),
+  labels = c("D", "E", "F"), nrow = 1, rel_widths = c(2, 2, 1),
+  align = "h", axis = "tb"
+)
+
+# Save figures
+ggsave(fig1a_psa, filename = "Figure1_PsA_analysis.svg", width = 18, height = 8, dpi = 300)
+ggsave(fig1b_month, filename = "Figure1_Month_analysis.svg", width = 18, height = 8, dpi = 300)
+ggsave(cowplot::ggdraw(results_real_1$combined_heatmap_plot), filename = "Figure2_all_metadata_heatmaps.svg", width = 25, height = 20, dpi = 300)
 
 # -----------------------------------------------------------------------------
-# 3. PERMUTED DATA ANALYSIS (Null model)
+# 4. NULL MODEL: PERMUTED DATA ANALYSIS
 # -----------------------------------------------------------------------------
+message("\n=== Null Model: Permuted Data Analysis ===")
 
-# Create permuted lipid profiles (columns shuffled within each feature)
-SEED <- 42
-lipid_profiles_rndm <- mapply(function(col, j) {
+# Permute lipid features (destroy biological signal)
+lipid_profiles_perm <- as.data.frame(lapply(lipid_profiles, function(col, j) {
   set.seed(SEED + j)
-  perm <- sample(seq_along(col), length(col))
-  col[perm]
-}, lipid_profiles, seq_len(ncol(lipid_profiles)), SIMPLIFY = FALSE)
+  col[sample(length(col))]
+}, j = seq_along(lipid_profiles)))
 
-lipid_profiles_rndm <- as.data.frame(lipid_profiles_rndm, stringsAsFactors = FALSE)
-
-# Run analysis on permuted data
-set.seed(SEED)
-results_lipids_rndm <- umap_ward_misclassification_analysis(
-  data = lipid_profiles_rndm,
-  target = sample_types,
+# Single-target permuted analysis
+results_perm_1 <- umap_ward_misclassification_analysis(
+  data = lipid_profiles_perm,
+  target = lipid_metadata$PsA,
   labels = lipid_metadata$ID,
-  output_dir = "lipid_results_rndm",
+  output_dir = "lipid_results_perm",
   determine_cluster_number = FALSE,
   voronoi_targets = FALSE
 )
 
-set.seed(SEED)
-results_lipids_rndm_2 <- umap_ward_misclassification_analysis(
-  data = lipid_profiles_rndm,
-  target = sample_types,
+results_perm_2 <- umap_ward_misclassification_analysis(
+  data = lipid_profiles_perm,
+  target = lipid_metadata$PsA,
   labels = lipid_metadata$ID,
-  output_dir = "lipid_results_rndm",
+  output_dir = "lipid_results_perm",
   determine_cluster_number = TRUE,
   voronoi_targets = FALSE
 )
 
-# Report permuted data results
-cat("PsA/controls misclassification rate in permuted data:",
-    sprintf("%.2f%%", results_lipids_rndm$misclassification_rate * 100), "\n")
+cat(sprintf("Permuted data misclassification rate: %.1f%%\n", 
+            results_perm_1$misclassification_rate * 100))
 
-if (!is.null(results_lipids_rndm$misclassified_samples) && nrow(results_lipids_rndm$misclassified_samples) > 0) {
-  cat("Misclassified PsA/controls in permuted data:\n")
-  print(results_lipids_rndm$misclassified_samples)
-} else {
-  cat("No misclassified PsA/controls in permuted data.\n")
-}
+# Permuted UMAP heatmap
+hm_mat <- as.data.frame(results_perm_1$umap_result$Projected)
+rownames(hm_mat) <- results_perm_1$umap_result$UniqueData$Label
 
-print(results_lipids_rndm$umap_plot)
-
-# -----------------------------------------------------------------------------
-# 4. HEATMAP FOR PERMUTED DATA UMAP PROJECTION
-# -----------------------------------------------------------------------------
-
-library(ComplexHeatmap)
 pal0 <- colorRampPalette(c("cornsilk", "cornsilk2", "cornsilk3", "cornsilk4"))
+ha_bottom <- ComplexHeatmap::HeatmapAnnotation(empty = anno_empty(border = FALSE),
+                                               which = "column", height = unit(1, "cm"))
 
-# Prepare heatmap matrix from UMAP projection
-hm_mat <- as.data.frame(results_lipids_rndm$umap_result$Projected)
-rownames(hm_mat) <- results_lipids_rndm$umap_result$UniqueData$Label
-
-# Bottom margin annotation (empty space)
-ha_bottom <- ComplexHeatmap::HeatmapAnnotation(
-  empty = anno_empty(border = FALSE),
-  which = "column",
-  height = grid::unit(1, "cm")
-)
-
-# Create and capture heatmap
-heat_map_lipids_rdm_umap <- grid::grid.grabExpr({
-  ComplexHeatmap::draw(
-    ComplexHeatmap::Heatmap(
-      as.matrix(hm_mat),
-      col = pal0(123),
-      cluster_rows = TRUE,
-      clustering_method_rows = "ward.D2",
-      show_row_dend = TRUE,
-      cluster_columns = FALSE,
-      row_dend_width = unit(6, "cm"),
-      column_dend_height = unit(4, "cm"),
-      row_names_side = "left",
-      row_names_gp = grid::gpar(fontsize = 6),
-      bottom_annotation = ha_bottom,
-      show_heatmap_legend = FALSE,
-      border = FALSE,
-      rect_gp = grid::gpar(col = NA),
-      column_title = "Dendrogram\n",
-      column_title_gp = grid::gpar(fontsize = 16, fontface = "plain")
-    )
-  )
+perm_umap_heatmap <- grid.grabExpr({
+  ComplexHeatmap::draw(ComplexHeatmap::Heatmap(
+    as.matrix(hm_mat), col = pal0(123),
+    cluster_rows = TRUE, clustering_method_rows = "ward.D2",
+    show_row_dend = TRUE, cluster_columns = FALSE,
+    row_dend_width = unit(6, "cm"), column_dend_height = unit(4, "cm"),
+    row_names_side = "left", row_names_gp = gpar(fontsize = 6),
+    bottom_annotation = ha_bottom, show_heatmap_legend = FALSE,
+    border = FALSE, rect_gp = gpar(col = NA),
+    column_title = "UMAP Dendrogram"
+  ))
 })
 
-# Combine and save permuted data plots
-lipids_combined_plot_2 <- cowplot::plot_grid(
-  results_lipids_rndm$voronoi_plot + labs(title = "UMAP projection of permuted data by study group", subtitle = ""),
-  results_lipids_rndm_2$voronoi_plot + labs(title = "UMAP projection of permuted data by clusters", subtitle = ""),
-  results_lipids_rndm_2$heatmap_result$plot +
-    theme(legend.position.inside = TRUE, legend.position = c(.5, .5),
-          legend.direction = "vertical", legend.text = element_text(size = 4.5), plot.subtitle = element_text(size = 8)) +
+# Combined permuted data figure
+fig2 <- cowplot::plot_grid(
+  results_perm_1$voronoi_plot + labs(title = "Permuted: Study groups"),
+  results_perm_2$voronoi_plot + labs(title = "Permuted: Clusters"),
+  results_perm_2$heatmap_result$plot + 
+    theme(legend.position.inside = TRUE, legend.position = c(0.5, 0.5),
+          legend.direction = "vertical", legend.text = element_text(size = 4.5)) +
     guides(fill = guide_legend(nrow = 4, byrow = TRUE)) +
-    labs(title = "Misclassifieds"),
-  heat_map_lipids_rdm_umap,
-  labels = "AUTO", nrow = 1, rel_widths = c(3, 3, 1, 2),
-  align = "h", axis = "tb"
+    labs(title = "Misclassifications"),
+  perm_umap_heatmap,
+  labels = c("A", "B", "C", "D"), nrow = 1, 
+  rel_widths = c(3, 3, 1, 2), align = "h", axis = "tb"
 )
 
-print(lipids_combined_plot_2)
-ggsave(plot = lipids_combined_plot_2, filename = "lipids_combined_plot_2.svg", width = 18, height = 8)
+ggsave(fig2, filename = "Figure2_Permuted_analysis.svg", width = 22, height = 8, dpi = 300)
 
-
-# =============================================================================
-# 5. Supervised Classification Analysis 
-# =============================================================================
-
-# Load required libraries
-required_pkgs <- c("caret", "randomForest", "pbmcapply", "caTools", "parallel", "dplyr", "ggplot2")
-for (pkg in required_pkgs) {
-  if (!requireNamespace(pkg, quietly = TRUE)) install.packages(pkg)
-  library(pkg, character.only = TRUE)
-}
-
-# Source the main function
-source("perform_supervised_classification.R")
+# -----------------------------------------------------------------------------
+# 5. SUPERVISED CLASSIFICATION ANALYSIS
+# -----------------------------------------------------------------------------
+message("\n=== Supervised Classification Analysis ===")
 
 # Analysis parameters
-controls_only <- TRUE
-RF_only_plotted <- TRUE
+SEED <- 42
 training_size <- 0.67
 n_iterations <- 100
-# permute_data <- TRUE
+RF_only_plotted <- TRUE
 
 supervised_results <- lapply(c(FALSE, TRUE), function(permute_data) {
-
-  # -----------------------------------------------------------------------------
-  # 5.1. READ DATA
-  # -----------------------------------------------------------------------------
-
-  lipid_profiles <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished/PsA_lipids_BC.csv", row.names = 1)
-  lipid_metadata <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished/PsA_classes.csv", row.names = 1)
-
-  if (controls_only) {
-    control_lab_dates <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/09Originale/Controls_Lab_Dates.csv", row.names = 2, stringsAsFactors = FALSE)
-
-    control_lab_dates <- control_lab_dates %>%
-      mutate(Sampling.date = as.Date(Sampling.date, format = "%m/%d/%Y"),
-             month = format(Sampling.date, "%m"))
-
-    control_ids <- rownames(control_lab_dates)
-    lipid_profiles <- lipid_profiles[rownames(lipid_profiles) %in% control_ids,]
-    lipid_metadata <- lipid_metadata[rownames(lipid_metadata) %in% control_ids,]
-
-    control_lab_dates$ID <- rownames(control_lab_dates)
-    lipid_metadata$ID <- rownames(lipid_metadata)
-    lipid_metadata <- lipid_metadata %>%
-      left_join(control_lab_dates[, c("ID", "month")], by = "ID") %>%
-      select(-ID)
-  }
-
-  # Permute data
-  if (permute_data) {
-    # Create permuted lipid profiles (columns shuffled within each feature)
-    SEED <- 42
-    lipid_profiles_rndm <- mapply(function(col, j) {
-      set.seed(SEED + j)
-      perm <- sample(seq_along(col), length(col))
-      col[perm]
-    }, lipid_profiles, seq_len(ncol(lipid_profiles)), SIMPLIFY = FALSE)
-
-    lipid_profiles_rndm <- as.data.frame(lipid_profiles_rndm, stringsAsFactors = FALSE)
-    lipid_profiles_for_classification <- lipid_profiles_rndm
-  } else lipid_profiles_for_classification <- lipid_profiles
-
-  # Run analysis
-  message("Starting supervised classification analysis...")
-  results <- perform_supervised_classification(
-    X = lipid_profiles_for_classification,
-    Y = lipid_metadata,
-    seed = SEED,
-    n_iter = n_iterations,
-    training_size = training_size,
-    skip_tuning = if (permute_data) TRUE else FALSE
-  )
-
-  # Save results
-  write.csv(results$pooled_summary, "Supervised_Analysis_Summary_AllTargets_pooledBA.csv", row.names = FALSE)
-  write.csv(results$final_summary, "Supervised_Analysis_Summary_AllTargets_detailed.csv", row.names = FALSE)
-  write.csv(results$class_distributions, "Class_Distributions.csv", row.names = FALSE)
-
-  message("Analysis completed — results saved")
-
-  # -----------------------------------------------------------------------------
-  # 5.2. PLOT RESULTS
-  # -----------------------------------------------------------------------------
-
-  plot_df <- results$pooled_summary |>
-    filter(!is.na(Median)) |>
-    mutate(
-      Target = factor(Target),
-      Model = factor(Model, levels = c("RandomForest", "SVM"))
-    ) |>
-    group_by(Target) |>
-    mutate(
-      max_median = max(Median),
-  # CI_lower corresponding to that max Median; adjust if needed
-      ci_at_max = CI_lower[which.max(Median)]
-    ) |>
-    ungroup() |>
-    mutate(
-  # main sort: max_median; tie‑breaker: ci_at_max
-      sort_key = max_median * 1000 + ci_at_max,
-      Target_ordered = reorder(Target, sort_key)
+  lapply(c(FALSE, TRUE), function(controls_only) {
+    
+    # -----------------------------------------------------------------------------
+    # 5.1. DATA PREPARATION
+    # -----------------------------------------------------------------------------
+    message(sprintf("  Preparing data (permute=%s, controls_only=%s)...", permute_data, controls_only))
+    
+    # Load data
+    lipid_profiles <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished/PsA_lipids_BC.csv", row.names = 1)
+    lipid_metadata <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/DataSetPublished/PsA_classes.csv", row.names = 1)
+    
+    # Extract processing month
+    lipid_metadata$Month <- format(
+      as.Date(lipid_metadata$Sampling_date, format = "%m/%d/%Y"), "%B"
     )
-
-  # If only RF is plotted 
-  if (RF_only_plotted) plot_df <- plot_df[plot_df$Model == "RandomForest",]
-
-  p <- ggplot(plot_df, aes(x = Target_ordered, y = Median, color = Model)) +
-    geom_hline(yintercept = 0.5, color = "salmon", linetype = "dashed", linewidth = 0.8, alpha = 0.7) +
-    geom_rect(aes(xmin = as.numeric(Target_ordered) - 0.4, xmax = as.numeric(Target_ordered) + 0.4,
-                  ymin = CI_lower, ymax = CI_upper, fill = Model),
-              color = "black", alpha = 0.7, linewidth = 0.1) +
-    facet_wrap(Model ~ .) +
-    geom_segment(aes(x = as.numeric(Target_ordered) - 0.35, xend = as.numeric(Target_ordered) + 0.35,
-                     y = Median, yend = Median),
-                 linewidth = 1.4, alpha = 1) +
-    scale_color_manual(values = c("RandomForest" = "cornsilk4", "SVM" = "cornsilk4")) +
-    scale_fill_manual(values = c("RandomForest" = alpha("cornsilk3", 0.2),
-                                 "SVM" = alpha("cornsilk2", 0.2))) +
-    coord_flip() +
-    labs(x = "Target", y = "Balanced accuracy", title = "Balanced accuracy (controls only)",
-         color = "Model", fill = "Model") +
-    theme_bw() +
-    theme(axis.text.y = element_text(size = 7), legend.position = "top",
-          strip.background = element_rect(fill = "cornsilk"),
-          strip.text = element_text(colour = "black"))
-
-  print(p)
-
-  ggsave(paste0("Supervised_Analysis_BA_Plot_permuted", permute_data, ".svg"), p, width = if (RF_only_plotted) 6 else 12, height = 8, dpi = 300)
-
-  message("Plot saved as Supervised_Analysis_BA_Plot.svg")
-
-  return(list(
-    results = results,
-    plot = p))
+    
+    # Filter to controls only (if enabled)
+    if (controls_only) {
+      control_lab_dates <- read.csv("/home/joern/Aktuell/RheumaMetabolomicsFFM/09Originale/Controls_Lab_Dates.csv", row.names = 2, stringsAsFactors = FALSE)
+      control_ids <- rownames(control_lab_dates)
+      lipid_profiles <- lipid_profiles[rownames(lipid_profiles) %in% control_ids, ]
+      lipid_metadata <- lipid_metadata[rownames(lipid_metadata) %in% control_ids, ]
+      message(sprintf("    ✓ Filtered to %d control samples", nrow(lipid_profiles)))
+    }
+    
+    # Permute features (null model)
+    if (permute_data) {
+      set.seed(SEED)
+      lipid_profiles_perm <- mapply(function(col, j) {
+        set.seed(SEED + j)
+        col[sample(length(col))]
+      }, as.data.frame(lipid_profiles), seq_along(lipid_profiles), SIMPLIFY = FALSE)
+      lipid_profiles_for_classification <- as.data.frame(lipid_profiles_perm, stringsAsFactors = FALSE)
+    } else {
+      lipid_profiles_for_classification <- lipid_profiles
+    }
+    
+    # -----------------------------------------------------------------------------
+    # 5.2. RUN CLASSIFICATION ANALYSIS
+    # -----------------------------------------------------------------------------
+    message(sprintf("  Running %d iterations...", n_iterations))
+    results <- perform_supervised_classification(
+      X = lipid_profiles_for_classification,
+      Y = lipid_metadata,
+      seed = SEED,
+      n_iter = n_iterations,
+      training_size = training_size,
+      skip_tuning = permute_data
+    )
+    
+    # -----------------------------------------------------------------------------
+    # 5.2.1. CREATE STABILITY HEATMAPS (RF_ONLY + optional SVM)
+    # -----------------------------------------------------------------------------
+    prefix <- paste0(ifelse(permute_data, "permuted", "real"), "_", ifelse(controls_only, "controls", "all"))
+    target_heatmaps <- list()
+    
+    for(target_name in names(results$rf_assignments)) {
+      message(sprintf("  Processing target: %s", target_name))
+      
+      # **RF plot - ALWAYS**
+      rf_heatmap <- plot_classification_stability_heatmap(
+        class_assignments = results$rf_assignments[[target_name]],
+        true_classes = lipid_metadata[[target_name]],
+        title = paste(target_name, "(RF)"),
+        row_font_size = 6
+      )
+      target_heatmaps[[paste0(target_name, "_RF")]] <- rf_heatmap$plot
+      
+      # Save individual RF
+      ggsave(sprintf("Stability_Heatmap_%s_%s_RF.svg", prefix, target_name), 
+             rf_heatmap$plot, width = 10, height = 8, dpi = 300)
+      
+      # **SVM plot - ONLY if RF_only_plotted = FALSE**
+      if(!RF_only_plotted && target_name %in% names(results$svm_assignments)) {
+        svm_heatmap <- plot_classification_stability_heatmap(
+          class_assignments = results$svm_assignments[[target_name]],
+          true_classes = lipid_metadata[[target_name]],
+          title = paste(target_name, "(SVM)"),
+          row_font_size = 6
+        )
+        target_heatmaps[[paste0(target_name, "_SVM")]] <- svm_heatmap$plot
+        
+        # Save individual SVM
+        ggsave(sprintf("Stability_Heatmap_%s_%s_SVM.svg", prefix, target_name), 
+               svm_heatmap$plot, width = 10, height = 8, dpi = 300)
+      }
+    }
+    
+    # -----------------------------------------------------------------------------
+    # 5.2.2. COMBINED HEATMAP FIGURE
+    # -----------------------------------------------------------------------------
+    n_plots <- length(target_heatmaps)
+    ncol_plot <- ifelse(RF_only_plotted, 3, 4)
+    
+    combined_heatmap <- cowplot::plot_grid(
+      plotlist = target_heatmaps,
+      ncol = ncol_plot,
+      nrow = ceiling(n_plots / ncol_plot),
+      label_size = 14,
+      align = "hv"
+    )
+    
+    print(combined_heatmap)
+    
+    ggsave(sprintf("Figure3_Supervised_Heatmaps_%s.svg", prefix), 
+           combined_heatmap, width = ifelse(RF_only_plotted, 20, 25), height = 20, dpi = 300)
+    message(sprintf("    ✓ Combined heatmap saved: Figure3_Supervised_Heatmaps_%s.svg", prefix))
+    
+    # -----------------------------------------------------------------------------
+    # 5.3. CREATE PERFORMANCE PLOT
+    # -----------------------------------------------------------------------------
+    plot_df <- results$pooled_summary |>
+      filter(!is.na(Median)) |>
+      mutate(
+        Target = factor(Target),
+        Model = factor(Model, levels = c("RandomForest", "SVM"))
+      ) |>
+      group_by(Target) |>
+      mutate(n_label = paste0("n=", first(N_complete))) |>
+      ungroup() |>
+      group_by(Target) |>
+      mutate(
+        max_median = max(Median),
+        ci_at_max = CI_lower[which.max(Median)]
+      ) |>
+      ungroup() |>
+      mutate(
+        sort_key = max_median * 1000 + ci_at_max,
+        Target_ordered = reorder(Target, sort_key)
+      )
+    
+    if (RF_only_plotted) {
+      plot_df <- plot_df[plot_df$Model == "RandomForest", ]
+    }
+    
+    p <- ggplot(plot_df, aes(x = Target_ordered, y = Median)) +
+      geom_hline(yintercept = 0.5, color = "salmon", linetype = "dashed", linewidth = 0.8, alpha = 0.7) +
+      geom_text(aes(y = -0.05, label = n_label), hjust = 1, size = 3, fontface = "bold", color = "black") +
+      geom_rect(aes(xmin = as.numeric(Target_ordered) - 0.4, xmax = as.numeric(Target_ordered) + 0.4,
+                    ymin = CI_lower, ymax = CI_upper), 
+                fill = "cornsilk3", color = "black", alpha = 0.7, linewidth = 0.1) +
+      facet_wrap(Model ~ ., scales = "free_y") +
+      geom_segment(aes(x = as.numeric(Target_ordered) - 0.35, xend = as.numeric(Target_ordered) + 0.35,
+                       y = Median, yend = Median), linewidth = 1.4, alpha = 1) +
+      coord_flip(ylim = c(-0.12, 1.05)) +
+      labs(
+        x = "Metadata target", 
+        y = "Balanced accuracy",
+        title = sprintf("Classification Performance (%s, %s, n=%d)", 
+                        ifelse(permute_data, "permuted", "real"), 
+                        ifelse(controls_only, "controls", "all cases"), 
+                        nrow(lipid_profiles_for_classification))
+      ) +
+      theme_bw() +
+      theme(
+        axis.text.y = element_text(size = 7), 
+        legend.position = "top",
+        strip.background = element_rect(fill = "cornsilk"),
+        strip.text = element_text(colour = "black"),
+        plot.margin = ggplot2::margin(l = 60, r = 10, t = 10, b = 10, unit = "pt")
+      )
+    
+    print(p)
+    ggsave(sprintf("Supervised_BA_Plot_%s.svg", prefix), 
+           plot = p, width = ifelse(RF_only_plotted, 6, 12), height = 8, dpi = 300)
+    
+    # Save results
+    write.csv(results$pooled_summary, sprintf("Supervised_%s_pooled_summary.csv", prefix), row.names = FALSE)
+    write.csv(results$final_summary, sprintf("Supervised_%s_detailed_summary.csv", prefix), row.names = FALSE)
+    write.csv(results$class_distributions, sprintf("Class_Distributions_%s.csv", prefix), row.names = FALSE)
+    
+    message(sprintf("    ✓ Results saved (%s)", prefix))
+    
+    return(list(results = results, ba_plot = p, heatmaps = target_heatmaps, prefix = prefix, combined_heatmap = combined_heatmap))
+  })
 })
-message("Supervised analyses completed.")
 
+# Final summary
+message("\n✓ Supervised classification analysis complete (4 combinations)")
+message("Generated files:")
+for(res in supervised_results) {
+  for(inner_res in res) {
+    message(sprintf("- Supervised_%s_pooled_summary.csv", inner_res$prefix))
+    message(sprintf("- Supervised_BA_Plot_%s.svg", inner_res$prefix))
+    message(sprintf("- Figure3_Supervised_Heatmaps_%s.svg", inner_res$prefix))
+  }
+}

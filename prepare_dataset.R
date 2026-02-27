@@ -38,6 +38,13 @@ prepare_dataset <- function(input_X, Target = NULL, Label = NULL) {
     Target
   }
 
+  # Handle NA values in Target by assigning them to a new class
+  if (any(is.na(output_Y))) {
+    n_na <- sum(is.na(output_Y))
+    message(sprintf("Found %d NA values in Target. Assigning them to class 'Unknown'.", n_na))
+    output_Y[is.na(output_Y)] <- "Unknown"
+  }
+
   # Use existing "Label" column if Label is NULL and "Label" exists in input_X
   output_L <- if (is.null(Label)) {
     if (!"Label" %in% colnames(input_X)) {
