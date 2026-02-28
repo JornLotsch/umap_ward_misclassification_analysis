@@ -128,10 +128,16 @@ This script reproduces the primary case study described in the paper.
 
 ### Method Validation
 
-**`lipid_validation_data_run.R`**: Validation of the QC framework on independent data:
-- **Batch-effect-free validation**: UMAP + Ward + Voronoi + Random Forest applied to the Checa et al. (2015) reference dataset to confirm no false-positive artifact signals
-- **Simulated batch effect sensitivity**: Application to datasets with artificially injected batch effects of varying magnitude (0%, 50%, 100%, 150%, 200% of within-group SD)
-- Demonstrates sensitivity and specificity of the framework for detecting batch effects of different magnitudes
+**`lipid_validation_data_run.R`**: Comprehensive validation of the QC framework on independent data with artificial bias tests:
+- **Unsupervised analysis with artificial bias**: UMAP + Ward clustering + Voronoi tessellation applied to reference data with and without artificially injected batch effects
+  - Original data (unbiased)
+  - Biased data (PLATE 1 samples increased by configurable percentage)
+- **Supervised classification with artificial bias and permutation tests**: Random Forest classification testing sensitivity to bias across multiple conditions:
+  - Real data with original labels
+  - Real data with artificially injected bias
+  - Permuted feature data (null model) for statistical validation
+  - Permuted feature data with artificial bias (null model control)
+- Demonstrates sensitivity and specificity of the framework for detecting batch effects of configurable magnitude
 
 ### Demonstration Examples
 
