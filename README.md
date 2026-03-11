@@ -173,9 +173,12 @@ All required packages are automatically installed and loaded:
 - `cABCanalysis`, `twosamples`, `matrixStats` (recursive ABC analysis)
 
 
-## Requirements
-- **R >= 3.6.0**
-- Write permissions in output directory
+### System Requirements
+
+- **R version**: 4.0 or higher (recommended 4.3+)
+- **Operating System**: Linux or Unix (macOS supported); **not tested on Windows**
+- **RAM**: Minimum 4GB (8GB+ recommended for large datasets)
+- **Processing**: Parallel processing recommended; CPU cores utilized: 4-8
 
 ## License
 
