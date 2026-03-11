@@ -24,6 +24,8 @@
 #'   \item{class_distributions}{Class counts per target variable}
 #'   \item{rf_assignments}{List of RF class assignment matrices (full size, NAs for removed cases)}
 #'   \item{svm_assignments}{List of SVM class assignment matrices (full size, NAs for removed cases)}
+#'   \item{var_imp_rf_cv}{matrix of RF variable importances}
+#'   \item{var_imp_svm_cv}{matrix of SVM variable importances}
 #'
 #' @importFrom caret train trainControl confusionMatrix twoClassSummary
 #' @importFrom randomForest randomForest
@@ -38,12 +40,12 @@ perform_supervised_classification <- function(X, Y,
                                               n_iter = 10,
                                               training_size = 0.67,
                                               mtry_values = c(1, 2),
-                                              ntree_values = c(100, 200, 500, 1000),
+                                              ntree_values = c(50, 100, 200, 500, 1000),
                                               svm_C_values = c(0.1, 1, 10),
                                               svm_sigma_values = c(0.01, 0.1, 1),
                                               n_cores = parallel::detectCores() - 1,
                                               skip_tuning = FALSE) {
-
+  
   # Load required libraries
   if (!require("caret", quietly = TRUE)) stop("Package 'caret' is required")
   if (!require("randomForest", quietly = TRUE)) stop("Package 'randomForest' is required")
@@ -51,7 +53,7 @@ perform_supervised_classification <- function(X, Y,
   if (!require("caTools", quietly = TRUE)) stop("Package 'caTools' is required")
   if (!require("parallel", quietly = TRUE)) stop("Package 'parallel' is required")
   if (!require("dplyr", quietly = TRUE)) stop("Package 'dplyr' is required")
-
+  
   # --- Input validation ---
   message("=== Supervised Classification Analysis ===")
   if (!is.data.frame(X) && !is.matrix(X)) stop("X must be a data frame or matrix.")
@@ -125,6 +127,13 @@ perform_supervised_classification <- function(X, Y,
   # Initialize empty lists to store ALL target assignments
   all_rf_assignments <- list()
   all_svm_assignments <- list()
+
+  # Initialize empty lists to store ALL variable importances
+  all_rf_var_imps <- list()
+  all_svm_var_imps <- list()
+  
+  # Initialize empty variable importances vector
+  var_importance_empty <- setNames(rep(0, ncol(X)), colnames(X))  
   
   n_original <- nrow(X)  # FIXED: Original size for all matrices
   
@@ -177,63 +186,130 @@ perform_supervised_classification <- function(X, Y,
       stringsAsFactors = FALSE
     ))
     
-    # --- Hyperparameter tuning (if enabled) ---
-    best_rf <- list(mtry = 2, ntree = 500)
+    # Hyperparameter tuning section
+    
+    mtry_default <- if (!is.null(Y_train) && !is.factor(Y_train)) {
+      max(floor(ncol(X_train)/3), 1) 
+    } else 
+      floor(sqrt(ncol(X_train)))
+    best_rf <- list(mtry = mtry_default, 
+                    ntree = 500)
     best_svm <- list(C = 1, sigma = 0.1)
     
     if (!skip_tuning) {
-      message("  Tuning Random Forest...")
-      mtry_values_tune <- unique(append(unique(round(c(2, sqrt(ncol(X_train)), ncol(X_train) / 2))), mtry_values))
-      rf_tune <- expand.grid(mtry = mtry_values_tune, ntree = ntree_values)
-      rf_tune$error <- NA
+      p <- ncol(X_train)
       
-      for (i in 1:nrow(rf_tune)) {
-        model <- tryCatch({
-          randomForest::randomForest(x = X_train, y = factor(Y_train),
-                                     mtry = rf_tune$mtry[i], ntree = rf_tune$ntree[i])
-        }, error = function(e) NULL)
+      # Random Forest tuning
+      message("Tuning Random Forest...")
+      
+      # Construct mtry grid based on number of predictors
+      base_mtry <- unique(floor(c(
+        max(1, 0.1 * p),
+        sqrt(p),
+        p / 3,
+        p / 2
+      )))
+      base_mtry <- base_mtry[base_mtry >= 1 & base_mtry <= p]
+      mtry_values_tune <- sort(unique(c(base_mtry, mtry_values)))
+      ntree_values_tune <- ntree_values
+      
+      rf_tune <- expand.grid(mtry = mtry_values_tune, ntree = ntree_values_tune)
+      rf_tune$error <- NA_real_
+      
+      # Evaluate each parameter combination
+      for (i in seq_len(nrow(rf_tune))) {
+        set.seed(seed)
+        model <- tryCatch(
+          randomForest::randomForest(
+            x = X_train,
+            y = factor(Y_train),
+            mtry = rf_tune$mtry[i],
+            ntree = rf_tune$ntree[i]
+          ),
+          error = function(e) NULL
+        )
         
-        if (!is.null(model)) rf_tune$error[i] <- mean(model$err.rate[, 1])
+        if (!is.null(model)) {
+          rf_tune$error[i] <- mean(model$err.rate[, 1])
+        }
       }
       
-      best_rf_idx <- which.min(rf_tune$error)
-      if (is.na(best_rf_idx) || best_rf_idx > nrow(rf_tune)) best_rf_idx <- 1
-      best_rf <- rf_tune[best_rf_idx,]
+      # Select best valid model
+      rf_tune_valid <- rf_tune[is.finite(rf_tune$error), ]
       
-      message("  Tuning SVM...")
+      if (nrow(rf_tune_valid) > 0L) {
+        best_rf_idx <- which.min(rf_tune_valid$error)
+        best_rf <- list(
+          mtry = rf_tune_valid$mtry[best_rf_idx],
+          ntree = rf_tune_valid$ntree[best_rf_idx]
+        )
+      } else {
+        message("RF tuning failed - using defaults")
+      }
+      
+      # SVM tuning
+      message("Tuning SVM...")
+      
       svm_tune_data <- X_train
       svm_tune_data$target <- factor(Y_train)
       n_classes <- nlevels(svm_tune_data$target)
       
       if (n_classes < 2) {
-        message("  Skipping SVM: only 1 class")
-        next
-      }
-      
-      levels(svm_tune_data$target) <- paste0("Class", seq_len(n_classes))
-      
-      if (n_classes == 2) {
-        ctrl_tune <- caret::trainControl(method = "cv", number = min(5, nrow(svm_tune_data) - 1),
-                                         classProbs = TRUE, summaryFunction = twoClassSummary,
-                                         allowParallel = FALSE)
-        metric_tune <- "ROC"
+        message("Skipping SVM: only 1 class present")
       } else {
-        ctrl_tune <- caret::trainControl(method = "cv", number = min(5, nrow(svm_tune_data) - 1),
-                                         classProbs = TRUE, allowParallel = FALSE)
-        metric_tune <- "Accuracy"
-      }
-      
-      svm_tune_model <- tryCatch({
-        quiet_train(target ~ ., data = svm_tune_data, method = "svmRadial",
-                    trControl = ctrl_tune, metric = metric_tune,
-                    preProcess = c("center", "scale"),
-                    tuneGrid = expand.grid(C = svm_C_values, sigma = svm_sigma_values))
-      }, error = function(e) NULL)
-      
-      if (is.null(svm_tune_model)) {
-        message("  SVM tuning failed - using defaults")
-      } else {
-        best_svm <- list(C = svm_tune_model$bestTune$C, sigma = svm_tune_model$bestTune$sigma)
+        # Prepare factor levels for caret compatibility
+        levels(svm_tune_data$target) <- paste0("Class", seq_len(n_classes))
+        
+        # Configure cross-validation
+        if (n_classes == 2) {
+          ctrl_tune <- caret::trainControl(
+            method = "cv",
+            number = min(5, nrow(svm_tune_data) - 1),
+            classProbs = TRUE,
+            summaryFunction = twoClassSummary,
+            allowParallel = FALSE
+          )
+          metric_tune <- "ROC"
+        } else {
+          ctrl_tune <- caret::trainControl(
+            method = "cv",
+            number = min(5, nrow(svm_tune_data) - 1),
+            classProbs = TRUE,
+            allowParallel = FALSE
+          )
+          metric_tune <- "Accuracy"
+        }
+        
+        # Define tuning grid
+        svm_grid <- expand.grid(
+          C = svm_C_values,
+          sigma = svm_sigma_values
+        )
+        
+        # Execute tuning
+        set.seed(seed)
+        svm_tune_model <- tryCatch(
+          quiet_train(
+            target ~ .,
+            data = svm_tune_data,
+            method = "svmRadial",
+            trControl = ctrl_tune,
+            metric = metric_tune,
+            preProcess = c("center", "scale"),
+            tuneGrid = svm_grid
+          ),
+          error = function(e) NULL
+        )
+        
+        # Extract best parameters
+        if (!is.null(svm_tune_model) && !is.null(svm_tune_model$bestTune)) {
+          best_svm <- list(
+            C = svm_tune_model$bestTune$C,
+            sigma = svm_tune_model$bestTune$sigma
+          )
+        } else {
+          message("SVM tuning failed - using defaults")
+        }
       }
     }
     
@@ -256,13 +332,21 @@ perform_supervised_classification <- function(X, Y,
       rf_model <- tryCatch({
         if (!skip_tuning) {
           randomForest::randomForest(x = train_data, y = y_train,
-                                     mtry = best_rf$mtry, ntree = best_rf$ntree)
+                                     mtry = best_rf$mtry, ntree = best_rf$ntree,
+                                     na.action = randomForest::na.roughfix,
+                                     importance = TRUE, proximity = TRUE)
         } else {
-          randomForest::randomForest(x = train_data, y = y_train)
+          randomForest::randomForest(x = train_data, y = y_train,na.action = randomForest::na.roughfix,
+                                     importance = TRUE, proximity = TRUE)
         }
       }, error = function(e) NULL)
       
       if (is.null(rf_model)) return(NULL)
+      
+      if (!is.null(rf_model)) {
+        var_importance_rf <- randomForest::importance(rf_model, type = 1)[, 1]
+      } else 
+        var_importance_rf <- var_importance_empty
       
       # SVM
       train_svm <- train_data
@@ -275,6 +359,12 @@ perform_supervised_classification <- function(X, Y,
                     trControl = ctrl, preProcess = c("center", "scale"),
                     tuneGrid = data.frame(C = best_svm$C, sigma = best_svm$sigma))
       }, error = function(e) NULL)
+      
+      if (!is.null(svm_model)) {
+        var_importance_svm <- rowMeans(varImp(svm_model, scale = FALSE)$importance)
+      } else 
+        var_importance_svm <- var_importance_empty
+  
       
       # Predictions
       rf_pred <- predict(rf_model, test_data)
@@ -310,7 +400,9 @@ perform_supervised_classification <- function(X, Y,
         test_idx = which(!sample),
         rf_pred = rf_pred,
         svm_pred = svm_pred,
-        seed = s
+        seed = s,
+        var_importance_rf = var_importance_rf,
+        var_importance_svm = var_importance_svm
       )
     }, mc.cores = n_cores)
     
@@ -358,7 +450,13 @@ perform_supervised_classification <- function(X, Y,
     } else {
       all_summary_rows[[actual_class_name]] <- summary_rf
     }
+
+    # --- Extract variables' importance ---
+    
+    all_rf_var_imps[[actual_class_name]] <- var_imp_rf_cv <- do.call(cbind,lapply(cv_res, "[[", "var_importance_rf"))
+    all_svm_var_imps[[actual_class_name]] <- do.call(cbind,lapply(cv_res, "[[", "var_importance_svm"))
   }
+  
   
   # --- Final summaries ---
   final_summary <- dplyr::bind_rows(all_summary_rows)
@@ -385,6 +483,8 @@ perform_supervised_classification <- function(X, Y,
     class_distributions = class_distributions,
     sample_counts = sample_counts,
     rf_assignments = all_rf_assignments,    # Full size matrices
-    svm_assignments = all_svm_assignments   # Full size matrices
+    svm_assignments = all_svm_assignments,   # Full size matrices
+    var_imp_rf = all_rf_var_imps,
+    var_imp_svm = all_svm_var_imps
   ))
 }

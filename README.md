@@ -23,7 +23,7 @@ This framework complements existing omics QC pipelines by providing **post-analy
 
 ## Installation
 
-Download this code repository to your local hard drive. All required R packages will be automatically installed and loaded when you run the example scripts. 
+Download this code repository to the local hard drive. All required R packages will be automatically installed and loaded when you run the example scripts. 
 
 ## Package Architecture
 
@@ -51,7 +51,7 @@ The core computational functions automatically load their required libraries:
 ### Core Method Functions
 
 #### `umap_ward_misclassification_analysis()` — **Main QC Framework Function**
-**Description**: Combines UMAP projection, Ward hierarchical clustering, Voronoi visualization, and misclassification analysis to detect anomalous samples and data structure inconsistent with your study hypothesis.
+**Description**: Combines UMAP projection, Ward hierarchical clustering, Voronoi visualization, and misclassification analysis to detect anomalous samples and data structure inconsistent with the study hypothesis.
 
 **Key Parameters**:
 - `data`: Input data (samples × features)
@@ -67,7 +67,7 @@ The core computational functions automatically load their required libraries:
 - `{file_prefix}_misclassified_samples.csv`: Anomalous samples (if any)
 
 #### `perform_supervised_classification()` — **Artifact Detection via Random Forest**
-**Description**: Tests whether data structure supports your biological hypothesis or reveals technical artifacts by comparing classification accuracy across multiple alternative groupings (batches, dates, derived clusters).
+**Description**: Tests multiple hypotheses using **Random Forest and SVM** classifiers with hyperparameter tuning, comparing classification accuracy across biological targets vs. technical groupings (batches, dates, derived clusters).
 
 **Key Parameters**:
 - `X`: Predictor features
@@ -86,7 +86,7 @@ The core computational functions automatically load their required libraries:
 ### Basic Usage with Sample Data
 
 ``` r
-# Load your data
+# Load the data
 lipid_profiles <- read.csv("lipid_profiles.csv")
 sample_metadata <- read.csv("sample_metadata.csv")
 sample_types <- sample_metadata$SampleType
@@ -124,6 +124,9 @@ Case study on real lipidomics data (PsA patients vs. controls) demonstrating det
 - Identification of misclassified/anomalous samples
 - Random Forest supervised classification testing alternative hypotheses (study groups, derived clusters, batch identifiers, processing dates)
 - How supervised classifiers revealed that batch effects (not biological differences) dominated the signal
+- **Variable importance analysis** with recursive cABC selection and top-N feature extraction
+- **Hyperparameter tuning** for both Random Forest (`mtry`, `ntree`) and SVM (`C`, `sigma`)
+
 This script reproduces the primary case study described in the paper.
 
 ### Method Validation
@@ -142,7 +145,7 @@ This script reproduces the primary case study described in the paper.
 ### Demonstration Examples
 
 **`golfball_dataset_run.R`**: Artificial "golfball" dataset (concentric spheres) demonstrating the visualization approach on synthetic data with known structure. Useful for understanding how the method behaves when data structure is completely understood. The output includes a combined visualization (`golfballs_combined_plot.svg`) showing:
-- **Left panel**: UMAP projection with Voronoi tessellation colored by cluster assignments
+- **Left panel**: UMAP projection with Voronoi tessellation colored by cluster assignments (for Voronoi tesselation plot, cite Jorn Lotsch and Dario Kringel (2026). Voronoi tessellation as a complement or replacement for confidence ellipses in the visualization of data projection and clustering results. PLoS One (in revision))
 - **Right panel**: Misclassification heatmap comparing prior class assignments (spheres) with Ward-assigned clusters
 
 ![Golfball UMAP Analysis Results](golfballs_combined_plot.svg)
@@ -159,11 +162,16 @@ All required packages are automatically installed and loaded:
 - **Analysis**: `umap`, `clue` (Hungarian algorithm)
 - **Utilities**: `tidyr`, `scales`, `grid`
 
-### Supervised Classification (Random Forest)
-- `caret`, `randomForest`, `parallel`, `pbmcapply`, `caTools`, `dplyr`
+### Supervised Classification (Random Forest + SVM)
+- `caret`, `randomForest`, **SVM (svmRadial)**, `parallel`, `pbmcapply`, `caTools`, `dplyr`
+- Hyperparameter tuning with cross-validated grids (`mtry`, `ntree`, `C`, `sigma`)
 
 ### Demonstrations (Golfball, Visuals)
 - `ComplexHeatmap`, `cowplot`, `plot3D`, `car`, `ggplotify`
+
+### Variable Importance & Feature Selection
+- `cABCanalysis`, `twosamples`, `matrixStats` (recursive ABC analysis)
+
 
 ## Requirements
 - **R >= 3.6.0**
@@ -171,10 +179,10 @@ All required packages are automatically installed and loaded:
 
 ## License
 
-GPL-3
+CC-BY 4.0
 
 ## Citation
 
-If you use this tool in your work, please cite:
+If you use this code/concept/tool in your work, please cite:
 
-Lötsch J, Hahnefeld L, Geisslinger G, Himmelspach A, and Kringel D. When artifacts masquerade as discovery: An investigative quality control framework for lipidomics. *2026*.
+Lötsch J, Hahnefeld L, Geisslinger G, Himmelspach A, and Kringel D. When artifacts masquerade as discovery: An investigative quality control framework for lipidomics. *2026* (in preparation).
