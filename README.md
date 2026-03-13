@@ -77,6 +77,9 @@ The core computational functions automatically load their required libraries:
 
 **Returns**: Median balanced accuracy with 95% CI for each hypothesis tested.
 
+**Batch validation**: Tests batch detection sensitivity across graded technical variation (10-100% CV)
+
+
 ### Supplementary Functions
 
 **`umap_ward_misclassification_analysis_multi()`**: Optional multi-target extension. **`plot_classification_stability_heatmap()`**: Optional visualization of classification stability.
@@ -130,17 +133,10 @@ Case study on real lipidomics data (PsA patients vs. controls) demonstrating det
 This script reproduces the primary case study described in the paper.
 
 ### Method Validation
-
-**`lipid_validation_data_run.R`**: Comprehensive validation of the QC framework on independent data with artificial bias tests:
-- **Unsupervised analysis with artificial bias**: UMAP + Ward clustering + Voronoi tessellation applied to reference data with and without artificially injected batch effects
-  - Original data (unbiased)
-  - Biased data (PLATE 1 samples increased by configurable percentage)
-- **Supervised classification with artificial bias and permutation tests**: Random Forest classification testing sensitivity to bias across multiple conditions:
-  - Real data with original labels
-  - Real data with artificially injected bias
-  - Permuted feature data (null model) for statistical validation
-  - Permuted feature data with artificial bias (null model control)
-- Demonstrates sensitivity and specificity of the framework for detecting batch effects of configurable magnitude
+**`lipid_validation1_data_run.R`**: Full validation pipeline on 403×39 serum lipid mediator dataset from MS biomarker study (healthy controls only). Tests framework sensitivity across **5 batch effect magnitudes** (original, weak/10%CV, medium/20%CV, strong/30%CV, extreme/100%CV) using simulated technical batches (batch_day + run_order drift). Demonstrates:
+- Unsupervised UMAP+Ward clustering misclassification rates (40.2% → 24.1%)
+- Supervised Random Forest balanced accuracy scaling from 0.51 → 0.86
+- Realistic batch simulation matching Fan et al. 2019 CV ranges (17.5-34.1%)
 
 ### Demonstration Examples
 
